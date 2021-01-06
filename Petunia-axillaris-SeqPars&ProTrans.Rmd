@@ -1,0 +1,136 @@
+---
+title: "Petunia-axillaris"
+author: "Winston Wong"
+date: "12/23/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+__Loading Relevant Packages & Data__
+```{r}
+library(Biostrings); library(rtracklayer); library(plyranges)
+```
+
+The gff file contains Petunia axillaris gene annotations v4.1 as described in the paper "Identification of transcription factors controlling floral morphology in wild Petunia species with contrasting pollination syndromes" which was submitted to Plant Journal.
+
+Authors: Yarahmadov, Tural; Robinson, Sarah J.; Hanemian, Mathieu; Pulver, Valentin; Kuhlemeier, Cris
+
+Contact persons(s): Kuhlemeier, Cris
+Data curator(s): Yarahmadov, Tural
+
+Source: https://zenodo.org/record/3922967#.X_OG1thKhPY
+
+```{r}
+download.file("https://zenodo.org/record/3922967/files/Peaxi162annotation_v4.gff?download=1", "data/Paxillaris.gff")
+```
+
+Sequences were downloaded from NCBI's genome database in the FASTA format for genome:
+
+Source: https://www.ncbi.nlm.nih.gov/genome/93408?genome_assembly_id=934428
+
+```{r}
+download.file("ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/013/625/405/GCA_013625405.1_IPS_Ppar_1.0/GCA_013625405.1_IPS_Ppar_1.0_genomic.fna.gz", "data/Paxillaris.fna")
+```
+
+Here we use the `readDNAStringSet()` and `import()` functions to read in the `fna` and `gff` files, respectively.
+
+```{r}
+chr_Paxillaris <- readDNAStringSet("data/Paxillaris.fna")
+gff_Paxillaris <- import("data/Paxillaris.gff")
+```
+
+__Subsetting Sequencing/Genome Data__
+We only want the sequences that correspond to genes. We can accomplish this by subsetting `gff_Paxillaris` which is a GRanges object. This subset with sequences corresponding to genes is saved in the object named `gffgene_Paxillaris`.
+```{r}
+gffgene_Paxillaris <- gff_Paxillaris[values(gff_Paxillaris)[, "type"]=="gene"]
+```
+
+The next step is to extract the gene ranges. We can accomplish this by subsetting the first read of `chr_Paxillaris` and use the `IRanges` function to create Irange instances with the start and end defined as the sequences that related to "type" = gene (`gffgene_Paxillaris`). 
+
+```{r}
+generanges_Paxillaris <- DNAStringSet(Views(chr_Paxillaris[[1]], IRanges(start(gffgene_Paxillaris), end(gffgene_Paxillaris))))
+```
+
+We then assign the sequences contained in `generanges_Paxillaris` to the corresponding ID tags in `gffgene_Paxillaris`.
+
+```{r}
+names(generanges_Paxillaris) <- values(gffgene_Paxillaris)[,"ID"]
+```
+
+A obstacle that I faced is that the sequencing data was not the best quality; there were many reads that had a width of zero or had a gapped alignment. I used subsetting to filter out reads that had width of zero/no nucleotides. This subset was saved in the object titled `b`.
+```{r}
+b <- generanges_Paxillaris[width(generanges_Paxillaris) > 0]
+```
+
+__Translating to Protein__
+The following code accounts for the gapped alignment. It is made up of 3 main functions: `seqToCodons()`, `translateCodons()`, and `translateGappedAln()`. 
+
+`seqToCodons()` is a function that splits the sequencing data in codons. It is important to note that the data should be a `DNAStringSet` with a gapped alignment. Our data, `b`, is a `DNAStringSet`.  
+
+
+```{r}
+seqToCodons <- function(b) {
+  seqs <- as.character(b) #The `DNAStringSet` is coerced to the characters
+  len <- width(b)[333] #Establishing length of sequence 
+  starts <- seq(from=1, to=len, by=3) #Defining codons
+  ends <- starts + 2 #Defining ends of codons
+  myViews <- lapply(b, function(x) {
+    Views(x, starts, ends)
+  })
+  myCodons <- lapply(myViews, function(x) { 
+    as.character(DNAStringSet(x))
+  })
+  myCodons
+}
+
+translateCodons <- function(myCodons, unknownCodonTranslatesTo="-") {
+  # make new genetic code
+  gapCodon <- "-"
+  names(gapCodon) <- "---"
+  my_GENETIC_CODE <- c(GENETIC_CODE, gapCodon) #`GENETIC_CODE` is a mapping between codons and amino acids
+  
+  #translate the codons
+  pep<- my_GENETIC_CODE[myCodons]
+  
+  #check for codons that were not possible to translate, e.g. frameshift codons
+  if (sum(is.na(pep))>0) {
+    pep[which(is.na(pep))] <- unknownCodonTranslatesTo
+  }
+  
+  #prep for output
+  pep <- paste(pep, collapse="")
+  return(pep)
+}
+
+#wrapping `seqToCodons()` and `tranlsateCodons()` into one:
+translateGappedAln <- function(b, unknownCodonTranslatesTo="-") {
+  myCodons <- seqToCodons(b)
+  myAAaln <- AAStringSet(unlist(lapply(myCodons, translateCodons, unknownCodonTranslatesTo=unknownCodonTranslatesTo)))
+  return(myAAaln)
+}
+```
+
+The following code translates the gapped alignment of P.axillaris but uses subsetting to separate the positive and negative strands.
+```{r}
+#Filtering and translating sequences of `+` strand
+pos <- gffgene_Paxillaris[strand(gffgene_Paxillaris) == "+"]
+generange_pos <- DNAStringSet(Views(chr_Paxillaris[[1]], IRanges(start(pos), end(pos))))
+names(generange_pos) <- values(pos)[,"ID"]
+poswidth <- generange_pos[width(generange_pos) >0]
+pos_translate <- translateGappedAln(poswidth)
+
+#Filtering and translating sequences of `-` strand
+neg <- gffgene_Paxillaris[strand(gffgene_Paxillaris) == "-"]
+generange_neg <- DNAStringSet(Views(chr_Paxillaris[[1]], IRanges(start(neg), end(neg))))
+names(generange_neg) <- values(neg)[, "ID"]
+negwidth <- generange_neg[width(generange_neg) > 0]
+neg_translate <- translateGappedAln(negwidth)
+
+#Writing protein sequences to `fasta` file
+writeXStringSet(c(pos_translate, neg_translate), "./data/mypep_Paxillaris.fasta")
+
+```
+
