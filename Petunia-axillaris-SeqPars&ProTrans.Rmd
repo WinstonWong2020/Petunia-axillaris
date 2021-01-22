@@ -14,7 +14,7 @@ __Loading Relevant Packages & Data__
 library(Biostrings); library(rtracklayer); library(plyranges)
 ```
 
-The gff file contains Petunia axillaris gene annotations v4.1 as described in the paper "Identification of transcription factors controlling floral morphology in wild Petunia species with contrasting pollination syndromes" which was submitted to Plant Journal.
+The gff file contains Petunia axillaris gene annotations v4.1 as described in the paper "Identification of transcription factors controlling floral morphology in wild Petunia species with contrasting pollination syndromes" which was submitted to Plant Journal in August 2020.
 
 Authors: Yarahmadov, Tural; Robinson, Sarah J.; Hanemian, Mathieu; Pulver, Valentin; Kuhlemeier, Cris
 
